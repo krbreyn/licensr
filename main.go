@@ -3,90 +3,128 @@ package main
 import (
 	"embed"
 	"fmt"
-	"io"
 	"os"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 //go:embed licenses/*.txt
 var licenseFiles embed.FS
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("usage: licensr list/print/make [license-name]")
-		os.Exit(0)
-	}
+var rootCmd = &cobra.Command{
+	Use:   "licensr",
+	Short: "Create license files from the CLI",
+	Long: `Licensr is a tool to list, print, or create license files.
 
-	files, err := licenseFiles.ReadDir("licenses")
-	if err != nil {
-		panic(err)
-	}
+Usage:
+	licensr list
+	licensr print <license-name>
+	licensr make <icense-name>`,
+}
 
-	switch os.Args[1] {
-	case "list":
-		for _, file := range files {
-			fmt.Println(strings.TrimSuffix(file.Name(), ".txt"))
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all available licenses",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		files, err := licenseFiles.ReadDir("licenses")
+		if err != nil {
+			return fmt.Errorf("error reading licenses: %w", err)
 		}
 
-	case "print":
-		if len(os.Args) != 3 {
-			goto noLicense
+		for _, file := range files {
+			name := strings.TrimSuffix(file.Name(), ".txt")
+			cmd.Println(name)
+		}
+		return nil
+	},
+}
+
+var printCmd = &cobra.Command{
+	Use:   "print <license-name>",
+	Short: "Print a specific license",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		want := strings.ToLower(args[0])
+
+		files, err := licenseFiles.ReadDir("licenses")
+		if err != nil {
+			return fmt.Errorf("error reading licenses: %w", err)
 		}
 
-		want := strings.ToLower(os.Args[2])
 		for _, file := range files {
-			if strings.ToLower(strings.TrimSuffix(file.Name(), ".txt")) == want {
+			name := strings.ToLower(strings.TrimSuffix(file.Name(), ".txt"))
+			if name == want {
 				contents, err := licenseFiles.ReadFile("licenses/" + file.Name())
 				if err != nil {
-					panic(err)
+					return fmt.Errorf("error reading license file: %w", err)
 				}
-				fmt.Println(string(contents))
+				cmd.Println(string(contents))
+				return nil
 			}
 		}
 
-	case "make":
-		if len(os.Args) != 3 {
-			goto noLicense
+		return fmt.Errorf("no license with name %s found", args[0])
+	},
+}
+
+var makeCmd = &cobra.Command{
+	Use:   "make <license-name>",
+	Short: "Create a LICENSE file with the specified license",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		want := strings.ToLower(args[0])
+
+		files, err := licenseFiles.ReadDir("licenses")
+		if err != nil {
+			return fmt.Errorf("error reading licenses: %w", err)
 		}
 
 		var licenseTxt string
-
-		want := strings.ToLower(os.Args[2])
+		var licenseName string
 		for _, file := range files {
-			if strings.ToLower(strings.TrimSuffix(file.Name(), ".txt")) == want {
+			name := strings.TrimSuffix(file.Name(), ".txt")
+			if strings.ToLower(name) == want {
+				licenseName = name
+
 				contents, err := licenseFiles.ReadFile("licenses/" + file.Name())
 				if err != nil {
-					panic(err)
+					return fmt.Errorf("error reading license file: %w")
 				}
+
 				licenseTxt = string(contents)
+				break
 			}
 		}
+
 		if licenseTxt == "" {
-			fmt.Printf("No license with name %s found.\n", os.Args[2])
-			os.Exit(1)
+			return fmt.Errorf("no license with name %s found", args[0])
 		}
 
 		dst, err := os.Create("LICENSE")
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("error creating LICENSE file: %w", err)
 		}
 		defer dst.Close()
 
-		_, err = io.Copy(dst, strings.NewReader(licenseTxt))
+		_, err = dst.WriteString(licenseTxt)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("error writing to LICENSE file: %w", err)
 		}
-		fmt.Printf("Success! You are now licensed under %s.\n", want)
 
-	default:
-		fmt.Printf("Error: Not understood: %s\n", os.Args[1])
+		cmd.Printf("Success! You rae now licensed under %s.\n", licenseName)
+		return nil
+	},
+}
+
+func main() {
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(printCmd)
+	rootCmd.AddCommand(makeCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
-
-	os.Exit(0)
-
-noLicense:
-	fmt.Println("Error: You must specify a license.")
-	os.Exit(1)
-
 }
