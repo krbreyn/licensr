@@ -113,7 +113,7 @@ var makeCmd = &cobra.Command{
 			return fmt.Errorf("error writing to LICENSE file: %w", err)
 		}
 
-		cmd.Printf("Success! You rae now licensed under %s.\n", licenseName)
+		cmd.Printf("Success! You are now licensed under %s.\n", licenseName)
 		return nil
 	},
 }
